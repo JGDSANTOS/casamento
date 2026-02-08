@@ -152,7 +152,8 @@ elif menu == "🔐 Área dos Noivos":
         df_presentes = carregar_presentes()
         presentes_indisponiveis = df_presentes[df_presentes['Disponivel'] == False]
         if not presentes_indisponiveis.empty:
-            st.dataframe(presentes_indisponiveis[['Item', 'PresenteadoPor','valor']], hide_index=True)
+            st.dataframe(presentes_indisponiveis[['Item', 'PresenteadoPor','Valor']], hide_index=True)
     elif senha:
 
         st.error("Senha incorreta.")
+
