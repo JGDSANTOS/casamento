@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Configuração da Página ---
 st.set_page_config(
@@ -9,46 +10,52 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- Arquivos de Dados ---
-ARQUIVO_PRESENTES = 'lista_presentes.csv'
-ARQUIVO_RSVP = 'rsvp.csv'
+# --- IDs das Planilhas do Google ---
+SHEET_ID_PRESENTES = '1dNRkTe-TgC59zd9ftar_8OkNEv9fkjIG-otl8uWCv1s'
+SHEET_ID_RSVP = '1L6FAa8oLTUb5G9Pf-C3bpcvVqDVMHHncSBkDJfySL4Q'
 
-# --- Funções Auxiliares ---
-def inicializar_dados():
-    # Se não existir arquivo de presentes, cria um padrão
-    if not os.path.exists(ARQUIVO_PRESENTES):
-        dados_iniciais = {
-            'Item': ['Geladeira', 'Fogão', 'Microondas', 'Liquidificador', 'Jogo de Jantar', 'Cafeteira', 'Fritadeira Airfryer', 'Jogo de Lençol', 'Faqueiro', 'Lua de Mel (Cota)'],
-            'Disponivel': [True] * 10,
-            'PresenteadoPor': [''] * 10
-        }
-        df = pd.DataFrame(dados_iniciais)
-        df.to_csv(ARQUIVO_PRESENTES, index=False)
+# --- Conexão com Google Sheets (Cacheada) ---
+@st.cache_resource
+def conectar_google_sheets():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    return client
+
+# --- Funções de Leitura e Escrita ---
+
+def carregar_dados(sheet_id):
+    """Lê qualquer planilha e retorna um DataFrame"""
+    client = conectar_google_sheets()
+    sheet = client.open_by_key(sheet_id).sheet1
+    dados = sheet.get_all_records()
+    df = pd.DataFrame(dados)
+    return df
+
+def adicionar_rsvp(nome, qtd, msg):
+    """Adiciona uma nova linha na planilha de convidados"""
+    client = conectar_google_sheets()
+    sheet = client.open_by_key(SHEET_ID_RSVP).sheet1
+    # Adiciona a linha no final
+    sheet.append_row([nome, qtd, msg])
+
+def atualizar_presente(item_nome, nome_doador):
+    """Busca o item e marca como indisponível"""
+    client = conectar_google_sheets()
+    sheet = client.open_by_key(SHEET_ID_PRESENTES).sheet1
     
-    # Se não existir arquivo de RSVP, cria vazio
-    if not os.path.exists(ARQUIVO_RSVP):
-        df_rsvp = pd.DataFrame(columns=['Nome', 'Qtd_Pessoas', 'Mensagem'])
-        df_rsvp.to_csv(ARQUIVO_RSVP, index=False)
-
-def carregar_presentes():
-    return pd.read_csv(ARQUIVO_PRESENTES)
-
-def salvar_presentes(df):
-    df.to_csv(ARQUIVO_PRESENTES, index=False)
-
-def salvar_rsvp(nome, qtd, msg):
-    df = pd.read_csv(ARQUIVO_RSVP)
-    novo_rsvp = pd.DataFrame({'Nome': [nome], 'Qtd_Pessoas': [qtd], 'Mensagem': [msg]})
-    df = pd.concat([df, novo_rsvp], ignore_index=True)
-    df.to_csv(ARQUIVO_RSVP, index=False)
-
-def carregar_rsvp():
-    return pd.read_csv(ARQUIVO_RSVP)
-
-# Inicializa os arquivos na primeira execução
-inicializar_dados()
+    # Encontra a célula que tem o nome do item
+    cell = sheet.find(item_nome)
+    
+    if cell:
+        # Atualiza a coluna 'Disponivel' (Coluna 2) para FALSE
+        sheet.update_cell(cell.row, 2, "FALSE")
+        # Atualiza a coluna 'PresenteadoPor' (Coluna 3) com o nome
+        sheet.update_cell(cell.row, 3, nome_doador)
 
 # --- Interface Principal ---
+
 st.title("Casamento de José & Maria")
 st.markdown("---")
 
@@ -60,7 +67,13 @@ menu = st.sidebar.radio(
 
 # --- Página Inicial ---
 if menu == "🏠 Início":
-    st.image("Capa.png", caption="Sejam bem-vindos ao nosso site!")
+    # Dica: Se não tiver a imagem "Capa.png", o st.image vai dar erro. 
+    # Coloquei um try/except para não quebrar o app se faltar a imagem.
+    try:
+        st.image("Capa.png", caption="Sejam bem-vindos ao nosso site!")
+    except:
+        st.info("(Imagem de Capa aqui)")
+        
     st.header("Estamos muito felizes em compartilhar esse momento com você!")
     st.write("Utilize o menu ao lado para ver nossa lista de presentes ou confirmar sua presença.")
 
@@ -68,16 +81,23 @@ if menu == "🏠 Início":
 elif menu == "🎁 Lista de Presentes":
     st.header("Lista de Presentes")
 
-    # Verifica se um presente acabou de ser dado (para mostrar a foto)
-    if 'presente_confirmado' in st.session_state and st.session_state['presente_confirmado']:
-        st.image("Obrigado.png", caption="Muito obrigado pelo carinho!")
+    # Verifica feedback de sucesso
+    if 'msg_sucesso' in st.session_state:
         st.balloons()
-        st.success(f"Registrado com sucesso! Agradecemos muito.")
-        del st.session_state['presente_confirmado'] 
+        st.success(st.session_state['msg_sucesso'])
+        # Limpa a mensagem para não aparecer de novo se recarregar
+        del st.session_state['msg_sucesso']
         st.markdown("---")
 
     st.write("Escolha um item para nos presentear.")
-    df_presentes = carregar_presentes()
+    
+    # Carrega do Google Sheets
+    df_presentes = carregar_dados(SHEET_ID_PRESENTES)
+    
+    # Tratamento para garantir que "TRUE" (string) vire True (booleano)
+    # O Google Sheets as vezes retorna texto em vez de booleano puro
+    df_presentes['Disponivel'] = df_presentes['Disponivel'].astype(str).str.upper() == 'TRUE'
+    
     presentes_disponiveis = df_presentes[df_presentes['Disponivel'] == True]
 
     if presentes_disponiveis.empty:
@@ -90,20 +110,21 @@ elif menu == "🎁 Lista de Presentes":
 
             if enviar:
                 if nome_doador:
-                    idx = df_presentes.index[df_presentes['Item'] == presente_escolhido].tolist()[0]
-                    df_presentes.at[idx, 'Disponivel'] = False
-                    df_presentes.at[idx, 'PresenteadoPor'] = nome_doador
-                    salvar_presentes(df_presentes)
-                    st.session_state['presente_confirmado'] = True
-                    st.rerun() 
+                    # Chama a função que atualiza o Google Sheets
+                    atualizar_presente(presente_escolhido, nome_doador)
+                    
+                    st.session_state['msg_sucesso'] = "Registrado com sucesso! Agradecemos muito."
+                    st.rerun()
                 else:
                     st.error("Por favor, digite seu nome.")
 
     st.markdown("---")
     st.subheader("Já presenteados:")
+    # Filtra os indisponíveis
     presentes_indisponiveis = df_presentes[df_presentes['Disponivel'] == False]
+    
     if not presentes_indisponiveis.empty:
-        st.dataframe(presentes_indisponiveis[['Item']], hide_index=True)
+        st.dataframe(presentes_indisponiveis[['Item', 'PresenteadoPor']], hide_index=True)
 
 # --- Página de RSVP ---
 elif menu == "✅ Confirmar Presença":
@@ -117,7 +138,9 @@ elif menu == "✅ Confirmar Presença":
         
         if confirmar:
             if nome_rsvp:
-                salvar_rsvp(nome_rsvp, qtd_pessoas, mensagem)
+                # Salva no Google Sheets
+                adicionar_rsvp(nome_rsvp, qtd_pessoas, mensagem)
+                
                 st.balloons()
                 st.success(f"Confirmado! Esperamos você, {nome_rsvp}.")
             else:
@@ -133,27 +156,46 @@ elif menu == "🔐 Área dos Noivos":
         st.success("Acesso Liberado!")
         st.markdown("---")
         
-        df_convidados = carregar_rsvp()
+        # Carrega RSVP do Google Sheets
+        df_convidados = carregar_dados(SHEET_ID_RSVP)
         
         if df_convidados.empty:
             st.warning("Ninguém confirmou presença ainda.")
         else:
-            # Cálculo dos totais
             total_confirmacoes = len(df_convidados)
             total_pessoas = df_convidados['Qtd_Pessoas'].sum()
             
-            # Mostrando métricas em destaque
             col1, col2 = st.columns(2)
-            col1.metric("Famílias/Grupos Confirmados", total_confirmacoes)
-            col2.metric("Total de Pessoas (Cabeças)", int(total_pessoas))
+            col1.metric("Famílias/Grupos", total_confirmacoes)
+            col2.metric("Total de Pessoas", int(total_pessoas))
             
-        st.markdown("### Lista Completa")
-            # Mostra a tabela interativa
-        df_presentes = carregar_presentes()
-        presentes_indisponiveis = df_presentes[df_presentes['Disponivel'] == False]
-        if not presentes_indisponiveis.empty:
-            st.dataframe(presentes_indisponiveis[['Item', 'PresenteadoPor','Valor']], hide_index=True)
+            st.markdown("### Lista de Convidados")
+            st.dataframe(df_convidados, hide_index=True)
+            
+        st.markdown("---")
+        st.markdown("### Controle Financeiro dos Presentes")
+        
+        # Carrega Presentes do Google Sheets
+        df_presentes = carregar_dados(SHEET_ID_PRESENTES)
+        
+        # Tratamento de booleano novamente
+        df_presentes['Disponivel'] = df_presentes['Disponivel'].astype(str).str.upper() == 'TRUE'
+        
+        ganhos = df_presentes[df_presentes['Disponivel'] == False]
+        
+        if not ganhos.empty:
+            # Tenta converter valor para número caso esteja como texto no Sheets
+            try:
+                # Remove R$ e converte vírgula para ponto se necessário
+                ganhos['Valor'] = ganhos['Valor'].astype(str).str.replace('R$', '').str.replace(',', '.').astype(float)
+                total_valor = ganhos['Valor'].sum()
+                st.metric("Total em Presentes (R$)", f"R$ {total_valor:.2f}")
+            except:
+                st.warning("Não consegui somar os valores. Verifique se a coluna 'Valor' na planilha contém apenas números.")
+
+            st.dataframe(ganhos[['Item', 'PresenteadoPor', 'Valor']], hide_index=True)
+        else:
+            st.info("Nenhum presente recebido ainda.")
+
     elif senha:
-
         st.error("Senha incorreta.")
-
