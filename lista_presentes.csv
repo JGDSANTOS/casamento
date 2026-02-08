@@ -7,7 +7,7 @@ Base de Cama,True,,900
 Assadeiras,True,,100
 Faqueiro,True,,200
 Utensílios de Silicone,True,,180
-Potinhos de Sobremesa,False,Maria,150
+Potinhos de Sobremesa,True,,150
 Batedeira Planetária,True,,400
 Cafeteira,True,,500
 Jogo de Panelas,True,,600
@@ -25,3 +25,4 @@ Ajuda na Lua de Mel (Cota Premium 500R$),True,,500
 Outros,True,,
 Outros,True,,
 Outros,True,,
+
