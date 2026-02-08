@@ -147,11 +147,12 @@ elif menu == "🔐 Área dos Noivos":
             col1.metric("Famílias/Grupos Confirmados", total_confirmacoes)
             col2.metric("Total de Pessoas (Cabeças)", int(total_pessoas))
             
-            st.markdown("### Lista Completa")
+        st.markdown("### Lista Completa")
             # Mostra a tabela interativa
-            df_presentes = carregar_presentes()
-            presentes_indisponiveis = df_presentes[df_presentes['Disponivel'] == False]
-            if not presentes_indisponiveis.empty:
-                st.dataframe(presentes_indisponiveis[['Item', 'PresenteadoPor','valor']], hide_index=True)
+        df_presentes = carregar_presentes()
+        presentes_indisponiveis = df_presentes[df_presentes['Disponivel'] == False]
+        if not presentes_indisponiveis.empty:
+            st.dataframe(presentes_indisponiveis[['Item', 'PresenteadoPor','valor']], hide_index=True)
     elif senha:
+
         st.error("Senha incorreta.")
