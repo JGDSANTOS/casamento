@@ -54,31 +54,68 @@ def atualizar_presente(item_nome, nome_doador):
         # Atualiza a coluna 'PresenteadoPor' (Coluna 3) com o nome
         sheet.update_cell(cell.row, 3, nome_doador)
 
-# --- Interface Principal ---
 
-st.title("Casamento de José & Maria")
-st.markdown("---")
 
-# Menu Lateral para Navegação
-menu = st.sidebar.radio(
+
+
+
+
+
+import streamlit as st
+
+# 2. Lista de opções (tem que ser idêntica em todo o código)
+opcoes = ["🏠 Início", "🎁 Lista de Presentes", "✅ Confirmar Presença", "🔐 Área dos Noivos"]
+
+# 3. Inicialização do Session State
+# A 'key' do rádio será a nossa fonte da verdade
+if "navegação" not in st.session_state:
+    st.session_state["navegação"] = "🏠 Início"
+
+# 4. Função para os botões do meio da tela
+def mudar_pagina(nome_pagina):
+    st.session_state["navegação"] = nome_pagina
+
+# 5. Barra Lateral (Sidebar)
+# O rádio usa a 'key' diretamente, então ele se atualiza sozinho
+st.sidebar.radio(
     "Navegue por aqui:",
-    ("🏠 Início", "🎁 Lista de Presentes", "✅ Confirmar Presença", "🔐 Área dos Noivos")
+    opcoes,
+    key="navegação"
 )
 
-# --- Página Inicial ---
-if menu == "🏠 Início":
-    # Dica: Se não tiver a imagem "Capa.png", o st.image vai dar erro. 
-    # Coloquei um try/except para não quebrar o app se faltar a imagem.
-    try:
-        st.image("Capa.png", caption="Sejam bem-vindos ao nosso site!")
-    except:
-        st.info("(Imagem de Capa aqui)")
-        
+# --- Lógica de Exibição Baseada no State ---
+
+if st.session_state["navegação"] == "🏠 Início":
+    st.image("Capa.png", caption="Sejam bem-vindos ao nosso site!")
     st.header("Estamos muito felizes em compartilhar esse momento com você!")
     st.write("Utilize o menu ao lado para ver nossa lista de presentes ou confirmar sua presença.")
+    
+    st.write("Escolha uma das opções abaixo para continuar:")
+
+    # Criando as colunas para os botões
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Quando clicado, chama a função 'mudar_pagina'
+        st.button("🎁 Ver Lista de Presentes", 
+                  on_click=mudar_pagina, 
+                  args=("🎁 Lista de Presentes",),
+                  use_container_width=True)
+
+    with col2:
+        st.button("✅ Confirmar Presença", 
+                  on_click=mudar_pagina, 
+                  args=("✅ Confirmar Presença",),
+                  use_container_width=True)
+        
+
+
+
+
+
 
 # --- Página de Presentes ---
-elif menu == "🎁 Lista de Presentes":
+elif st.session_state["navegação"] == "🎁 Lista de Presentes":
     st.header("Lista de Presentes")
 
     # Verifica feedback de sucesso
@@ -125,9 +162,15 @@ elif menu == "🎁 Lista de Presentes":
     
     if not presentes_indisponiveis.empty:
         st.dataframe(presentes_indisponiveis[['Item', 'PresenteadoPor']], hide_index=True)
+        
+    st.button("⬅ Voltar ao Início", on_click=mudar_pagina, args=("🏠 Início",))
+
+
+
+
 
 # --- Página de RSVP ---
-elif menu == "✅ Confirmar Presença":
+elif st.session_state["navegação"] == "✅ Confirmar Presença":
     st.header("Confirmação de Presença")
     
     with st.form("form_rsvp"):
@@ -146,8 +189,12 @@ elif menu == "✅ Confirmar Presença":
             else:
                 st.error("Por favor, preencha seu nome.")
 
+    st.button("⬅ Voltar ao Início", on_click=mudar_pagina, args=("🏠 Início",))
+
+
+
 # --- NOVA ABA: Área dos Noivos ---
-elif menu == "🔐 Área dos Noivos":
+elif st.session_state["navegação"] == "🔐 Área dos Noivos":
     st.header("Área Restrita")
     
     senha = st.text_input("Digite a senha de acesso:", type="password")
